@@ -363,6 +363,9 @@ async function loadExistingStreets() {
         drawAllStreets();
         updateStreetCount();
         
+        // Atualizar lista de semáforos na sidebar
+        updateTrafficLightsSidebar();
+        
         // Buscar intersecções automaticamente
         findIntersections();
     } catch (error) {
@@ -454,7 +457,7 @@ function drawIntersections(intersections) {
                     <i class="fas fa-cog"></i> Gerenciar Semáforos
                 </button>
                 <button onclick="analyzeIntersection('${getIntersectionId(intersection)}')" class="btn-popup">
-                    <i class="fas fa-chart-bar"></i> Analisar
+                    <i class="fas fa-chart-bar"></i> Analisar Fluxo
                 </button>
             `)
             .on('click', function() {
@@ -508,8 +511,87 @@ async function loadIntersectionTrafficLights(intersectionId = null) {
         if (intersections.length > 0) {
             drawIntersections(intersections);
         }
+        
+        // Atualizar sidebar
+        updateTrafficLightsSidebar();
     } catch (error) {
         console.error('Erro ao carregar semáforos:', error);
+    }
+}
+
+// Atualizar sidebar com lista de semáforos
+function updateTrafficLightsSidebar() {
+    const sidebarContent = document.getElementById('trafficLightsList');
+    if (!sidebarContent) return;
+
+    if (intersectionTrafficLights.length === 0) {
+        sidebarContent.innerHTML = `
+            <div class="no-traffic-lights">
+                <i class="fas fa-info-circle"></i>
+                <p>Nenhum semáforo configurado</p>
+                <small>Adicione semáforos clicando nas intersecções no mapa</small>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '<div class="traffic-lights-list">';
+    
+    intersectionTrafficLights.forEach(light => {
+        const street = streets.find(s => s.id === light.street_id);
+        const streetName = street ? street.name : `Rua ${light.street_id}`;
+        
+        html += `
+            <div class="traffic-light-item">
+                <div class="light-header">
+                    <i class="fas fa-traffic-light" style="color: #e74c3c;"></i>
+                    <strong>${streetName}</strong>
+                </div>
+                <div class="light-details">
+                    <div class="light-config">
+                        <span class="config-item">
+                            <i class="fas fa-clock"></i>
+                            Ciclo: ${light.cycle_time}s
+                        </span>
+                        <span class="config-item">
+                            <i class="fas fa-leaf"></i>
+                            Verde: ${light.green_time}s
+                        </span>
+                    </div>
+                    <div class="light-actions">
+                        <button onclick="removeTrafficLightFromSidebar('${light.intersection_id}', ${light.street_id})" class="btn-danger-small">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    sidebarContent.innerHTML = html;
+}
+
+// Remover semáforo da sidebar
+async function removeTrafficLightFromSidebar(intersectionId, streetId) {
+    if (!confirm('Tem certeza que deseja remover este semáforo?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/intersection-traffic-lights?intersection_id=${intersectionId}&street_id=${streetId}`, {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            await loadIntersectionTrafficLights();
+            updateStatus('Semáforo removido com sucesso!');
+        }
+    } catch (error) {
+        console.error('Erro ao remover semáforo:', error);
+        alert('Erro ao remover semáforo.');
     }
 }
 
@@ -558,7 +640,6 @@ function showTrafficLightModal() {
                 <div class="light-config">
                     <div class="config-display">
                         <span>Ciclo: ${existingLight.cycle_time}s | Verde: ${existingLight.green_time}s</span>
-                        <span class="efficiency">Eficiência: ${((existingLight.green_time / existingLight.cycle_time) * 100).toFixed(1)}%</span>
                     </div>
                     <button onclick="removeTrafficLight('${intersectionId}', ${streetId})" class="btn-danger">
                         <i class="fas fa-trash"></i> Remover
@@ -593,7 +674,7 @@ function showTrafficLightModal() {
             
             <div class="analysis-section">
                 <button onclick="analyzeIntersection('${intersectionId}')" class="btn-simulate">
-                    <i class="fas fa-chart-line"></i> Analisar Impacto dos Semáforos
+                    <i class="fas fa-chart-line"></i> Simular Fluxo de Tráfego
                 </button>
             </div>
         </div>
@@ -670,119 +751,30 @@ async function removeTrafficLight(intersectionId, streetId) {
     }
 }
 
-// Analisar intersecção
-async function analyzeIntersection(intersectionId) {
-    try {
-        showLoading(true);
-        
-        const response = await fetch('/api/intersection-analysis', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                intersection_id: intersectionId
-            })
-        });
-        
-        const analysis = await response.json();
-        showAnalysisResults(analysis, intersectionId);
-        
-    } catch (error) {
-        console.error('Erro na análise:', error);
-        alert('Erro ao analisar intersecção.');
-    } finally {
-        showLoading(false);
-    }
-}
+// ========== SISTEMA DE SIMULAÇÃO DE FLUXO ==========
 
-// Mostrar resultados da análise
-function showAnalysisResults(analysis, intersectionId) {
-    const selectedIntersection = intersections.find(intersection => 
-        getIntersectionId(intersection) === intersectionId
-    );
-    
-    const streetNames = selectedIntersection ? getIntersectionStreetNames(selectedIntersection) : 'Intersecção';
-    
-    let analysisContent = `
-        <div class="analysis-results">
-            <h3><i class="fas fa-chart-bar"></i> Análise da Intersecção</h3>
-            <p><strong>${streetNames}</strong></p>
-            
-            <div class="recommendation ${analysis.recommendation === 'ALTAMENTE RECOMENDADO' ? 'highly-recommended' : 
-                                      analysis.recommendation === 'RECOMENDADO' ? 'recommended' : 
-                                      analysis.recommendation === 'MARGINAL' ? 'marginal' : 'not-recommended'}">
-                <h4>Recomendação: ${analysis.recommendation}</h4>
-                <p>${getRecommendationMessage(analysis)}</p>
-            </div>
-            
-            <div class="analysis-metrics">
-                <div class="metric-row">
-                    <div class="metric">
-                        <span class="metric-label">Melhoria no Delay</span>
-                        <span class="metric-value ${analysis.delay_improvement > 0 ? 'positive' : 'negative'}">
-                            ${analysis.delay_improvement > 0 ? '+' : ''}${analysis.delay_improvement}%
-                        </span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">Melhoria no Throughput</span>
-                        <span class="metric-value ${analysis.throughput_improvement > 0 ? 'positive' : 'negative'}">
-                            ${analysis.throughput_improvement > 0 ? '+' : ''}${analysis.throughput_improvement}%
-                        </span>
-                    </div>
-                </div>
-                
-                <div class="metric-details">
-                    <h5>Detalhes:</h5>
-                    <p><strong>Nível de Serviço:</strong> ${analysis.level_of_service_before} → ${analysis.level_of_service_after}</p>
-                    <p><strong>Delay Médio:</strong> ${analysis.details.delay_antes}s → ${analysis.details.delay_depois}s</p>
-                    <p><strong>Throughput:</strong> ${analysis.details.throughput_antes} → ${analysis.details.throughput_depois} veículos/h</p>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    showModal('Análise da Intersecção', analysisContent);
-}
-
-function getRecommendationMessage(analysis) {
-    if (analysis.recommendation === 'ALTAMENTE RECOMENDADO') {
-        return 'Semáforos terão impacto muito positivo nesta intersecção!';
-    } else if (analysis.recommendation === 'RECOMENDADO') {
-        return 'Semáforos podem melhorar significativamente o fluxo.';
-    } else if (analysis.recommendation === 'MARGINAL') {
-        return 'Melhoria pequena - considere outras soluções de tráfego.';
-    } else {
-        return 'Semáforos podem piorar o congestionamento nesta intersecção.';
-    }
-}
-
-// ========== SISTEMA DE SIMULAÇÃO AVANÇADA ==========
-
-// Executar simulação avançada
-async function runAdvancedSimulation() {
+// Executar simulação de fluxo
+async function runFlowSimulation() {
     if (intersections.length === 0) {
         alert('É necessário ter intersecções para simular.');
         return;
     }
 
     showLoading(true);
-    updateStatus('Executando simulação avançada de intersecções...');
+    updateStatus('Simulando fluxo de tráfego...');
     
     try {
-        const response = await fetch('/api/simulate', {
+        const response = await fetch('/api/simulate-flow', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                type: 'advanced_intersection'
-            })
+            body: JSON.stringify({})
         });
 
         const results = await response.json();
-        displayAdvancedResults(results);
-        updateStatus('Simulação de intersecções concluída!');
+        displayFlowResults(results);
+        updateStatus('Simulação de fluxo concluída!');
         
     } catch (error) {
         console.error('Erro na simulação:', error);
@@ -793,35 +785,42 @@ async function runAdvancedSimulation() {
     }
 }
 
-// Mostrar resultados avançados
-function displayAdvancedResults(results) {
+// Mostrar resultados de fluxo
+function displayFlowResults(results) {
     const resultsDiv = document.getElementById('results');
     const contentDiv = document.getElementById('resultsContent');
     
     let html = '';
     
     // Estatísticas gerais
-    if (results.overall_stats) {
-        const stats = results.overall_stats;
+    if (results.overall_flow) {
+        const flow = results.overall_flow;
         
         html += `
-            <div class="result-item success">
-                <h4><i class="fas fa-chart-line"></i> Estatísticas Gerais do Sistema</h4>
-                <div class="result-metric">
-                    <span class="metric-label">Total de Intersecções</span>
-                    <span class="metric-value">${stats.total_intersections}</span>
-                </div>
-                <div class="result-metric">
-                    <span class="metric-label">Veículos Totais/hora</span>
-                    <span class="metric-value">${stats.total_vehicles?.toFixed(0) || 0}</span>
-                </div>
-                <div class="result-metric">
-                    <span class="metric-label">Delay Médio por Veículo</span>
-                    <span class="metric-value">${stats.average_delay?.toFixed(1) || 0}s</span>
-                </div>
-                <div class="result-metric">
-                    <span class="metric-label">Eficiência do Sistema</span>
-                    <span class="metric-value">${stats.average_efficiency?.toFixed(1) || 0}%</span>
+            <div class="flow-summary">
+                <h3><i class="fas fa-chart-line"></i> Resumo do Fluxo</h3>
+                <div class="flow-stats">
+                    <div class="flow-stat">
+                        <div class="stat-icon">🚗</div>
+                        <div class="stat-info">
+                            <div class="stat-value">${flow.total_cars_passing?.toLocaleString() || 0}</div>
+                            <div class="stat-label">Carros Passando</div>
+                        </div>
+                    </div>
+                    <div class="flow-stat">
+                        <div class="stat-icon">⏱️</div>
+                        <div class="stat-info">
+                            <div class="stat-value">${flow.average_wait_per_car?.toFixed(1) || 0}s</div>
+                            <div class="stat-label">Tempo Médio de Espera</div>
+                        </div>
+                    </div>
+                    <div class="flow-stat">
+                        <div class="stat-icon">🕒</div>
+                        <div class="stat-info">
+                            <div class="stat-value">${Math.round(flow.total_waiting_time / 60) || 0}min</div>
+                            <div class="stat-label">Tempo Total de Espera</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
@@ -829,48 +828,62 @@ function displayAdvancedResults(results) {
     
     // Resultados por intersecção
     if (results.intersections && results.intersections.length > 0) {
-        html += `<div class="result-item">
-            <h4><i class="fas fa-crosshairs"></i> Resultados por Intersecção</h4>`;
+        html += `<div class="intersection-flows">
+            <h3><i class="fas fa-crosshairs"></i> Fluxo por Intersecção</h3>`;
         
         results.intersections.forEach((item, index) => {
             const intersection = item.intersection_data;
-            const simResults = item.simulation_results;
+            const flow = item.flow_results;
             const streetNames = getIntersectionStreetNames(intersection);
             
-            const losClass = `los-${simResults.level_of_service}`;
+            // Determinar cor baseada na condição do tráfego
+            const conditionClass = getTrafficConditionClass(flow.traffic_condition);
             
             html += `
-                <div class="intersection-result ${losClass}">
-                    <div class="intersection-header">
-                        <strong>${streetNames}</strong>
-                        <span class="los-badge ${losClass}">Nível ${simResults.level_of_service}</span>
+                <div class="intersection-flow ${conditionClass}">
+                    <div class="flow-header">
+                        <h4>${streetNames}</h4>
+                        <span class="traffic-condition ${conditionClass}">
+                            ${flow.traffic_condition}
+                        </span>
                     </div>
                     
-                    <div class="result-grid">
-                        <div class="result-metric">
-                            <span class="metric-label">Throughput</span>
-                            <span class="metric-value">${simResults.total_throughput?.toFixed(0) || 0} veículos/h</span>
+                    <div class="flow-visual">
+                        <div class="cars-flowing">
+                            <div class="flow-icon">🚗</div>
+                            <div class="flow-info">
+                                <strong>${flow.cars_per_hour?.toLocaleString() || 0} carros/hora</strong>
+                                <span>passando pela intersecção</span>
+                            </div>
                         </div>
-                        <div class="result-metric">
-                            <span class="metric-label">Delay Médio</span>
-                            <span class="metric-value">${simResults.average_delay?.toFixed(1) || 0}s</span>
-                        </div>
-                        <div class="result-metric">
-                            <span class="metric-label">Eficiência</span>
-                            <span class="metric-value">${simResults.intersection_efficiency?.toFixed(1) || 0}%</span>
+                        
+                        <div class="waiting-time">
+                            <div class="time-icon">⏱️</div>
+                            <div class="time-info">
+                                <strong>${flow.average_waiting_time?.toFixed(1) || 0} segundos</strong>
+                                <span>de espera média por carro</span>
+                            </div>
                         </div>
                     </div>
                     
                     <div class="street-breakdown">
-                        <strong>Detalhes por Rua:</strong>
-                        ${Object.entries(simResults.street_results || {}).map(([streetId, streetResult]) => {
+                        <h5>Detalhes por Rua:</h5>
+                        ${Object.entries(flow.street_flows || {}).map(([streetId, streetFlow]) => {
                             const street = streets.find(s => s.id == streetId);
                             const streetName = street ? street.name : `Rua ${streetId}`;
+                            const hasLight = streetFlow.has_traffic_light;
+                            
                             return `
-                                <div class="street-detail">
-                                    <span>${streetName}: ${streetResult.throughput?.toFixed(0)} veículos/h 
-                                    (Delay: ${streetResult.delay_per_vehicle?.toFixed(1)}s)
-                                    ${streetResult.has_traffic_light ? '🚦' : ''}</span>
+                                <div class="street-flow-detail">
+                                    <div class="street-name">
+                                        ${streetName}
+                                        ${hasLight ? '<span class="traffic-light-indicator" title="Com semáforo">🚦</span>' : ''}
+                                    </div>
+                                    <div class="street-stats">
+                                        <span class="cars">${streetFlow.cars_passing} carros/h</span>
+                                        <span class="wait-time">${streetFlow.average_wait_time?.toFixed(1)}s espera</span>
+                                        <span class="flow-status ${streetFlow.flow_status.toLowerCase()}">${streetFlow.flow_status}</span>
+                                    </div>
                                 </div>
                             `;
                         }).join('')}
@@ -885,6 +898,154 @@ function displayAdvancedResults(results) {
     contentDiv.innerHTML = html;
     resultsDiv.style.display = 'block';
     resultsDiv.scrollIntoView({ behavior: 'smooth' });
+}
+
+// Analisar intersecção específica
+async function analyzeIntersection(intersectionId) {
+    try {
+        showLoading(true);
+        
+        // Executar simulação completa
+        const simulationResponse = await fetch('/api/simulate-flow', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({})
+        });
+        
+        const results = await simulationResponse.json();
+        
+        // Encontrar resultados desta intersecção
+        const intersectionResult = results.intersections.find(item => 
+            getIntersectionId(item.intersection_data) === intersectionId
+        );
+        
+        if (intersectionResult) {
+            showIntersectionAnalysis(intersectionResult.flow_results, intersectionResult.intersection_data);
+        } else {
+            alert('Não foi possível analisar esta intersecção.');
+        }
+        
+    } catch (error) {
+        console.error('Erro na análise:', error);
+        alert('Erro ao analisar intersecção.');
+    } finally {
+        showLoading(false);
+    }
+}
+
+// Mostrar análise da intersecção
+function showIntersectionAnalysis(flowResults, intersection) {
+    const streetNames = getIntersectionStreetNames(intersection);
+    const conditionClass = getTrafficConditionClass(flowResults.traffic_condition);
+    
+    let analysisContent = `
+        <div class="intersection-analysis">
+            <h3><i class="fas fa-chart-bar"></i> Análise de Fluxo</h3>
+            <p><strong>${streetNames}</strong></p>
+            
+            <div class="analysis-overview ${conditionClass}">
+                <div class="overview-header">
+                    <h4>Condição do Tráfego: ${flowResults.traffic_condition}</h4>
+                </div>
+                
+                <div class="key-metrics">
+                    <div class="metric-card">
+                        <div class="metric-icon">🚗</div>
+                        <div class="metric-content">
+                            <div class="metric-value">${flowResults.cars_per_hour?.toLocaleString() || 0}</div>
+                            <div class="metric-label">Carros por Hora</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-icon">⏱️</div>
+                        <div class="metric-content">
+                            <div class="metric-value">${flowResults.average_waiting_time?.toFixed(1) || 0}s</div>
+                            <div class="metric-label">Tempo Médio de Espera</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-icon">🕒</div>
+                        <div class="metric-content">
+                            <div class="metric-value">${Math.round(flowResults.total_waiting_time / 60) || 0}min</div>
+                            <div class="metric-label">Tempo Total de Espera</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="street-analysis">
+                <h5>Fluxo por Rua:</h5>
+                ${Object.entries(flowResults.street_flows || {}).map(([streetId, streetFlow]) => {
+                    const street = streets.find(s => s.id == streetId);
+                    const streetName = street ? street.name : `Rua ${streetId}`;
+                    const hasLight = streetFlow.has_traffic_light;
+                    
+                    return `
+                        <div class="street-analysis-item">
+                            <div class="street-header">
+                                <strong>${streetName}</strong>
+                                ${hasLight ? '<span class="light-badge">COM SEMÁFORO</span>' : '<span class="no-light-badge">SEM SEMÁFORO</span>'}
+                            </div>
+                            <div class="street-metrics">
+                                <span class="metric">
+                                    <i class="fas fa-car"></i>
+                                    ${streetFlow.cars_passing} carros/h
+                                </span>
+                                <span class="metric">
+                                    <i class="fas fa-clock"></i>
+                                    ${streetFlow.average_wait_time?.toFixed(1)}s de espera
+                                </span>
+                                <span class="metric status-${streetFlow.flow_status.toLowerCase()}">
+                                    ${streetFlow.flow_status}
+                                </span>
+                            </div>
+                            <div class="wait-range">
+                                <small>Tempo de espera: ${streetFlow.wait_time_range}</small>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+            
+            <div class="analysis-insights">
+                <h5>💡 Insights:</h5>
+                <p>${getTrafficInsights(flowResults)}</p>
+            </div>
+        </div>
+    `;
+    
+    showModal('Análise de Fluxo', analysisContent);
+}
+
+// Classificar condição do tráfego
+function getTrafficConditionClass(condition) {
+    switch(condition) {
+        case 'FLUÍDO': return 'flow-fluent';
+        case 'MODERADO': return 'flow-moderate';
+        case 'CONGESTIONADO': return 'flow-congested';
+        case 'PARADO': return 'flow-stopped';
+        default: return 'flow-unknown';
+    }
+}
+
+// Gerar insights baseados nos resultados
+function getTrafficInsights(flowResults) {
+    const avgWait = flowResults.average_waiting_time || 0;
+    const condition = flowResults.traffic_condition;
+    
+    if (condition === 'FLUÍDO') {
+        return "O tráfego está fluindo muito bem! Os tempos de espera são baixos e o fluxo é eficiente.";
+    } else if (condition === 'MODERADO') {
+        return "O tráfego está em condições aceitáveis. Considere ajustes nos semáforos para melhorar o fluxo.";
+    } else if (condition === 'CONGESTIONADO') {
+        return "O tráfego está congestionado. Avalie a necessidade de mais semáforos ou ajuste os tempos existentes.";
+    } else {
+        return "Tráfego parado ou muito lento. São necessárias intervenções significativas para melhorar o fluxo.";
+    }
 }
 
 // ========== SISTEMA DE BUSCA DE RUAS REAIS ==========
@@ -1036,18 +1197,12 @@ async function importRealStreet() {
                     <p>${data.message}</p>
             `;
             
-            if (data.real_geometry) {
-                successHtml += `<p><i class="fas fa-map-marked-alt"></i> <strong>Geometria real obtida do OpenStreetMap</strong></p>`;
-            } else {
-                successHtml += `<p><i class="fas fa-drafting-compass"></i> <strong>Geometria estimada baseada na localização</strong></p>`;
-            }
-            
             successHtml += `
                 <div class="import-details">
                     <p><strong>Comprimento:</strong> ${data.details.comprimento_km} km</p>
                     <p><strong>Faixas:</strong> ${data.details.faixas}</p>
                     <p><strong>Velocidade média:</strong> ${data.details.velocidade_media} km/h</p>
-                    <p><strong>Tipo de via:</strong> ${data.details.tipo_via}</p>
+                    <p><strong>Veículos por hora:</strong> ${data.details.veiculos_hora}</p>
                     <p><strong>Intersecções encontradas:</strong> ${data.intersections_found}</p>
                 </div>
             </div>
@@ -1063,7 +1218,7 @@ async function importRealStreet() {
                 drawIntersections(data.intersections);
             }
             
-            updateStatus(`Rua real "${streetName}" importada com geometria ${data.real_geometry ? 'REAL' : 'estimada'}!`);
+            updateStatus(`Rua real "${streetName}" importada com sucesso!`);
             
         } else {
             alert('Erro ao importar rua: ' + data.error);
@@ -1081,38 +1236,39 @@ async function importRealStreet() {
 
 // Mostrar modal
 function showModal(title, content) {
-    const modal = document.getElementById('customModal');
-    const modalTitle = document.getElementById('modalTitle');
-    const modalContent = document.getElementById('modalContent');
+    // Fechar modal existente primeiro
+    closeModal();
     
-    if (!modal) {
-        // Criar modal se não existir
-        const modalHTML = `
-            <div id="customModal" class="modal">
-                <div class="modal-dialog">
-                    <div class="modal-header">
-                        <h3 id="modalTitle">${title}</h3>
-                        <span class="close" onclick="closeModal()">&times;</span>
-                    </div>
-                    <div class="modal-body" id="modalContent">
-                        ${content}
-                    </div>
+    // Criar novo modal
+    const modalHTML = `
+        <div id="customModal" class="modal">
+            <div class="modal-dialog">
+                <div class="modal-header">
+                    <h3 id="modalTitle">${title}</h3>
+                    <span class="close" onclick="closeModal()">&times;</span>
+                </div>
+                <div class="modal-body" id="modalContent">
+                    ${content}
                 </div>
             </div>
-        `;
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-    } else {
-        modalTitle.textContent = title;
-        modalContent.innerHTML = content;
-        modal.style.display = 'block';
-    }
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Mostrar modal
+    const modal = document.getElementById('customModal');
+    modal.style.display = 'block';
 }
 
 // Fechar modal
 function closeModal() {
     const modal = document.getElementById('customModal');
     if (modal) {
-        modal.style.display = 'none';
+        modal.remove();
+    }
+    // Garantir que os marcadores permaneçam visíveis
+    if (intersections.length > 0) {
+        drawIntersections(intersections);
     }
 }
 
@@ -1120,6 +1276,10 @@ function closeModal() {
 function closeTrafficLightModal() {
     closeModal();
     selectedIntersection = null;
+    // Redesenhar intersecções para garantir que os ícones estejam visíveis
+    if (intersections.length > 0) {
+        drawIntersections(intersections);
+    }
 }
 
 // Funções auxiliares

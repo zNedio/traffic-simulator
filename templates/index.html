@@ -20,23 +20,6 @@
         <div class="main-content">
             <!-- Sidebar -->
             <div class="sidebar">
-                <!-- Controles de Simulação -->
-                <div class="control-panel">
-                    <h3><i class="fas fa-sliders-h"></i> Controles de Simulação</h3>
-                    
-                    <div class="simulation-mode">
-                        <label>Tipo de Simulação:</label>
-                        <select id="simulationType">
-                            <option value="single_street">Rua Individual</option>
-                            <option value="intersection">Análise de Intersecção</option>
-                        </select>
-                    </div>
-
-                    <button onclick="runAdvancedSimulation()" class="btn-simulate">
-                        <i class="fas fa-play"></i> Executar Simulação Avançada
-                    </button>
-                </div>
-
                 <!-- Gerenciamento de Ruas -->
                 <div class="form-section">
                     <h3><i class="fas fa-road"></i> Gerenciar Ruas</h3>
@@ -69,42 +52,6 @@
                         </div>
                     </div>
 
-                    <!-- Busca de Ruas Reais -->
-                    <div class="real-street-search">
-                        <h3><i class="fas fa-search-location"></i> Buscar Rua Real</h3>
-                        
-                        <div class="form-group">
-                            <label>Nome da Rua:</label>
-                            <input type="text" id="realStreetName" placeholder="Ex: Avenida Paulista">
-                        </div>
-
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label>Cidade:</label>
-                                <input type="text" id="cityName" value="São Paulo">
-                            </div>
-                            <div class="form-group">
-                                <label>Veículos/Hora:</label>
-                                <input type="number" id="realStreetVehicles" value="800">
-                            </div>
-                        </div>
-
-                        <div class="button-group">
-                            <button onclick="searchRealStreet()" class="btn-secondary">
-                                <i class="fas fa-search"></i> Buscar Rua
-                            </button>
-                            <button onclick="importRealStreet()" class="btn-primary">
-                                <i class="fas fa-download"></i> Importar
-                            </button>
-                        </div>
-
-                        <!-- Resultados da Busca -->
-                        <div id="searchResults" class="search-results" style="display: none;">
-                            <h4>Resultados da Busca:</h4>
-                            <div id="searchResultsContent"></div>
-                        </div>
-                    </div>
-
                     <div class="button-group">
                         <button onclick="startStreetDrawing()" class="btn-primary">
                             <i class="fas fa-draw-polygon"></i> Desenhar Rua
@@ -115,36 +62,64 @@
                     </div>
                 </div>
 
-                <!-- Configuração de Semáforos -->
-                <div class="traffic-light-config">
-                    <h3><i class="fas fa-traffic-light"></i> Gerenciar Semáforos</h3>
+                <!-- Busca de Ruas Reais -->
+                <div class="real-street-search">
+                    <h3><i class="fas fa-search-location"></i> Buscar Rua Real</h3>
                     
                     <div class="form-group">
-                        <label>Rua:</label>
-                        <select id="trafficLightStreet">
-                            <option value="">Selecione uma rua...</option>
-                        </select>
+                        <label>Nome da Rua:</label>
+                        <input type="text" id="realStreetName" placeholder="Ex: Avenida Paulista">
                     </div>
 
                     <div class="form-grid">
                         <div class="form-group">
-                            <label>Tempo do Ciclo (s):</label>
-                            <input type="number" id="cycleTime" value="90" min="30" max="180">
+                            <label>Cidade:</label>
+                            <input type="text" id="cityName" value="São Paulo">
                         </div>
                         <div class="form-group">
-                            <label>Tempo Verde (s):</label>
-                            <input type="number" id="greenTime" value="45" min="10" max="120">
+                            <label>Veículos/Hora:</label>
+                            <input type="number" id="realStreetVehicles" value="800">
                         </div>
                     </div>
 
                     <div class="button-group">
-                        <button onclick="addTrafficLight()" class="btn-primary">
-                            <i class="fas fa-plus"></i> Adicionar Semáforo
+                        <button onclick="searchRealStreet()" class="btn-secondary">
+                            <i class="fas fa-search"></i> Buscar Rua
                         </button>
-                        <button onclick="removeTrafficLight()" class="btn-danger">
-                            <i class="fas fa-trash"></i> Remover
+                        <button onclick="importRealStreet()" class="btn-primary">
+                            <i class="fas fa-download"></i> Importar
                         </button>
                     </div>
+
+                    <!-- Resultados da Busca -->
+                    <div id="searchResults" class="search-results" style="display: none;">
+                        <h4>Resultados da Busca:</h4>
+                        <div id="searchResultsContent"></div>
+                    </div>
+                </div>
+
+                <!-- Lista de Semáforos Configurados -->
+                <div class="traffic-light-config">
+                    <h3><i class="fas fa-traffic-light"></i> Semáforos Configurados</h3>
+                    <div id="trafficLightsList" class="traffic-lights-container">
+                        <!-- Lista de semáforos será carregada aqui dinamicamente -->
+                        <div class="no-traffic-lights">
+                            <i class="fas fa-info-circle"></i>
+                            <p>Nenhum semáforo configurado</p>
+                            <small>Adicione semáforos clicando nas intersecções no mapa</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Simulação -->
+                <div class="simulation-section">
+                    <h3><i class="fas fa-play-circle"></i> Simulação</h3>
+                    <button onclick="runFlowSimulation()" class="btn-simulate">
+                        <i class="fas fa-play"></i> Executar Simulação de Fluxo
+                    </button>
+                    <p class="simulation-info">
+                        <small>Analisa o fluxo de tráfego em todas as intersecções</small>
+                    </p>
                 </div>
 
                 <!-- Resultados -->
@@ -173,7 +148,7 @@
                         </div>
                         <div id="streetCount" class="status-item">
                             <i class="fas fa-road"></i>
-                            <span>Ruas: 0</span>
+                            <span>Ruas: 0 | Intersecções: 0</span>
                         </div>
                     </div>
                 </div>

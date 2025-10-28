@@ -2,53 +2,34 @@ from flask import Flask, render_template, request, jsonify
 import json
 import sqlite3
 import os
-from simulation_engine import TrafficSimulationEngine, MapManager, GeocodingService, RealStreetImporter, AdvancedTrafficSimulation, IntersectionTrafficLightManager
+from simulation_engine import TrafficFlowSimulator, TrafficLightManager, MapManager, GeocodingService, RealStreetImporter
 
 app = Flask(__name__)
-simulation_engine = TrafficSimulationEngine()
+traffic_simulator = TrafficFlowSimulator()
+traffic_light_manager = TrafficLightManager()
 map_manager = MapManager()
 real_street_importer = RealStreetImporter()
-advanced_simulator = AdvancedTrafficSimulation()
 
 # Configuração do banco SQLite
 def init_db():
     conn = sqlite3.connect('traffic.db')
     cursor = conn.cursor()
     
+    # Criar tabela streets
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS streets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             coordinates TEXT,
-            length_km REAL,
-            lanes INTEGER,
-            vehicles_per_hour INTEGER,
-            average_speed REAL,
+            length_km REAL DEFAULT 0.1,
+            lanes INTEGER DEFAULT 2,
+            vehicles_per_hour INTEGER DEFAULT 500,
+            average_speed REAL DEFAULT 50,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS traffic_lights (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            street_id INTEGER,
-            position REAL,
-            cycle_time INTEGER DEFAULT 60,
-            green_time INTEGER DEFAULT 30,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS simulations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            data TEXT,
-            results TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
+    # Tabela para semáforos de intersecção
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS intersection_traffic_lights (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,8 +43,23 @@ def init_db():
         )
     ''')
     
+    # Verificar e adicionar colunas faltantes
+    cursor.execute("PRAGMA table_info(streets)")
+    existing_columns = [column[1] for column in cursor.fetchall()]
+    
+    required_columns = ['length_km', 'vehicles_per_hour', 'average_speed']
+    for column in required_columns:
+        if column not in existing_columns:
+            if column == 'length_km':
+                cursor.execute(f'ALTER TABLE streets ADD COLUMN {column} REAL DEFAULT 0.1')
+            elif column == 'vehicles_per_hour':
+                cursor.execute(f'ALTER TABLE streets ADD COLUMN {column} INTEGER DEFAULT 500')
+            elif column == 'average_speed':
+                cursor.execute(f'ALTER TABLE streets ADD COLUMN {column} REAL DEFAULT 50')
+    
     conn.commit()
     conn.close()
+    print("✅ Banco de dados inicializado/verificado!")
 
 @app.route('/')
 def index():
@@ -85,7 +81,7 @@ def handle_streets():
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (data['name'], json.dumps(data['coordinates']), length_km,
               data.get('lanes', 2), data.get('vehicles_per_hour', 500),
-              data.get('average_speed', 40)))
+              data.get('average_speed', 50)))
         
         conn.commit()
         street_id = cursor.lastrowid
@@ -102,7 +98,7 @@ def handle_streets():
         conn = sqlite3.connect('traffic.db')
         cursor = conn.cursor()
         cursor.execute('DELETE FROM streets WHERE id = ?', (street_id,))
-        cursor.execute('DELETE FROM traffic_lights WHERE street_id = ?', (street_id,))
+        cursor.execute('DELETE FROM intersection_traffic_lights WHERE street_id = ?', (street_id,))
         conn.commit()
         conn.close()
         return jsonify({'message': 'Rua removida com sucesso!'})
@@ -112,7 +108,7 @@ def handle_streets():
         cursor = conn.cursor()
         cursor.execute('''
             SELECT s.*, 
-                   (SELECT COUNT(*) FROM traffic_lights WHERE street_id = s.id) as has_traffic_light
+                   (SELECT COUNT(*) FROM intersection_traffic_lights WHERE street_id = s.id) as has_traffic_light
             FROM streets s
             ORDER BY s.created_at DESC
         ''')
@@ -133,266 +129,6 @@ def handle_streets():
             })
         
         return jsonify(street_list)
-
-@app.route('/api/traffic-lights', methods=['GET', 'POST', 'DELETE'])
-def handle_traffic_lights():
-    if request.method == 'POST':
-        data = request.json
-        conn = sqlite3.connect('traffic.db')
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            INSERT INTO traffic_lights (street_id, position, cycle_time, green_time)
-            VALUES (?, ?, ?, ?)
-        ''', (data['street_id'], data.get('position', 0.5), 
-              data.get('cycle_time', 60), data.get('green_time', 30)))
-        
-        conn.commit()
-        traffic_light_id = cursor.lastrowid
-        conn.close()
-        
-        return jsonify({'id': traffic_light_id, 'message': 'Semáforo adicionado com sucesso!'})
-    
-    elif request.method == 'DELETE':
-        traffic_light_id = request.args.get('id')
-        conn = sqlite3.connect('traffic.db')
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM traffic_lights WHERE id = ?', (traffic_light_id,))
-        conn.commit()
-        conn.close()
-        return jsonify({'message': 'Semáforo removido com sucesso!'})
-    
-    else:  # GET
-        conn = sqlite3.connect('traffic.db')
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT tl.*, s.name as street_name 
-            FROM traffic_lights tl
-            JOIN streets s ON tl.street_id = s.id
-        ''')
-        traffic_lights = cursor.fetchall()
-        conn.close()
-        
-        return jsonify([{
-            'id': tl[0],
-            'street_id': tl[1],
-            'street_name': tl[6],
-            'position': tl[2],
-            'cycle_time': tl[3],
-            'green_time': tl[4]
-        } for tl in traffic_lights])
-
-@app.route('/api/simulate', methods=['POST'])
-def simulate_traffic():
-    data = request.json
-    simulation_type = data.get('type', 'intersection')
-    
-    conn = sqlite3.connect('traffic.db')
-    cursor = conn.cursor()
-    
-    # Buscar todas as ruas
-    cursor.execute('SELECT * FROM streets')
-    streets_data = cursor.fetchall()
-    
-    # Buscar todos os semáforos (agora da nova tabela)
-    cursor.execute('SELECT * FROM intersection_traffic_lights')
-    traffic_lights_data = cursor.fetchall()
-    conn.close()
-    
-    # Preparar dados para simulação
-    streets = []
-    for s in streets_data:
-        streets.append({
-            'id': s[0],
-            'name': s[1],
-            'coordinates': json.loads(s[2]),
-            'length_km': s[3],
-            'lanes': s[4],
-            'vehicles_per_hour': s[5],
-            'average_speed': s[6]
-        })
-    
-    # Carregar semáforos no gerenciador avançado
-    for tl in traffic_lights_data:
-        advanced_simulator.traffic_light_manager.add_traffic_light_to_intersection(
-            tl[1],  # intersection_id
-            tl[2],  # street_id
-            tl[3],  # cycle_time
-            tl[4]   # green_time
-        )
-    
-    # Encontrar intersecções
-    intersections = map_manager.find_intersections(streets)
-    
-    # Executar simulação
-    if simulation_type == 'advanced_intersection' and intersections:
-        results = {
-            'intersections': [],
-            'overall_stats': {
-                'total_intersections': len(intersections),
-                'total_vehicles': 0,
-                'average_delay': 0,
-                'average_efficiency': 0
-            }
-        }
-        
-        total_delay = 0
-        total_vehicles = 0
-        total_efficiency = 0
-        
-        for intersection in intersections:
-            intersection_result = advanced_simulator.simulate_intersection_with_lights(
-                intersection, streets
-            )
-            results['intersections'].append({
-                'intersection_data': intersection,
-                'simulation_results': intersection_result
-            })
-            
-            total_delay += intersection_result['average_delay']
-            total_vehicles += intersection_result['total_vehicles']
-            total_efficiency += intersection_result['intersection_efficiency']
-        
-        # Estatísticas gerais
-        if len(intersections) > 0:
-            results['overall_stats']['average_delay'] = total_delay / len(intersections)
-            results['overall_stats']['average_efficiency'] = total_efficiency / len(intersections)
-            results['overall_stats']['total_vehicles'] = total_vehicles
-        
-        return jsonify(results)
-    else:
-        # Simulação individual por rua (fallback)
-        results = {}
-        for street in streets:
-            street_traffic_lights = [tl for tl in traffic_lights_data if tl[2] == street['id']]
-            street_results = simulation_engine.simulate_intersection([street], street_traffic_lights)
-            street['simulation_results'] = street_results
-    
-    return jsonify({
-        'simulation_results': results,
-        'streets': streets,
-        'traffic_lights': traffic_lights_data,
-        'intersections': intersections
-    })
-
-@app.route('/api/intersections')
-def get_intersections():
-    conn = sqlite3.connect('traffic.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM streets')
-    streets_data = cursor.fetchall()
-    conn.close()
-    
-    streets = []
-    for s in streets_data:
-        streets.append({
-            'id': s[0],
-            'name': s[1],
-            'coordinates': json.loads(s[2]),
-            'length_km': s[3],
-            'lanes': s[4]
-        })
-    
-    intersections = map_manager.find_intersections(streets)
-    return jsonify(intersections)
-
-@app.route('/api/search-street', methods=['POST'])
-def search_street():
-    data = request.json
-    street_name = data.get('street_name', '')
-    city = data.get('city', 'São Paulo')
-    
-    if not street_name:
-        return jsonify({'error': 'Nome da rua é obrigatório'}), 400
-    
-    geocoder = GeocodingService()
-    results = geocoder.search_street(street_name, city)
-    
-    return jsonify({
-        'results': results,
-        'count': len(results)
-    })
-
-@app.route('/api/import-street', methods=['POST'])
-def import_street():
-    data = request.json
-    street_name = data.get('street_name', '')
-    city = data.get('city', 'São Paulo')
-    vehicles_per_hour = data.get('vehicles_per_hour', 800)
-    average_speed = data.get('average_speed', None)  # Deixa None para auto-detecção
-    lanes = data.get('lanes', None)  # Deixa None para auto-detecção
-    
-    if not street_name:
-        return jsonify({'error': 'Nome da rua é obrigatório'}), 400
-    
-    # Importar rua real com geometria precisa
-    street_data, message = real_street_importer.import_real_street(
-        street_name, city, vehicles_per_hour, average_speed, lanes
-    )
-    
-    if not street_data:
-        return jsonify({'error': message}), 404
-    
-    # Salvar no banco
-    conn = sqlite3.connect('traffic.db')
-    cursor = conn.cursor()
-    
-    length_km = map_manager.calculate_street_length(street_data['coordinates'])
-    
-    cursor.execute('''
-        INSERT INTO streets (name, coordinates, length_km, lanes, vehicles_per_hour, average_speed)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (street_data['name'], json.dumps(street_data['coordinates']), length_km,
-          street_data['lanes'], street_data['vehicles_per_hour'], street_data['average_speed']))
-    
-    conn.commit()
-    street_id = cursor.lastrowid
-    conn.close()
-    
-    # Buscar intersecções com ruas existentes
-    conn = sqlite3.connect('traffic.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM streets WHERE id != ?', (street_id,))
-    existing_streets_data = cursor.fetchall()
-    conn.close()
-    
-    existing_streets = []
-    for s in existing_streets_data:
-        existing_streets.append({
-            'id': s[0],
-            'name': s[1],
-            'coordinates': json.loads(s[2]),
-            'length_km': s[3],
-            'lanes': s[4]
-        })
-    
-    imported_street = {
-        'id': street_id,
-        'name': street_data['name'],
-        'coordinates': street_data['coordinates'],
-        'length_km': length_km,
-        'lanes': street_data['lanes']
-    }
-    
-    intersections = real_street_importer.find_intersections_with_imported(
-        imported_street, existing_streets
-    )
-    
-    return jsonify({
-        'success': True,
-        'message': message,
-        'street_id': street_id,
-        'street_data': imported_street,
-        'real_geometry': street_data.get('real_street_data', {}).get('source') == 'overpass',
-        'intersections_found': len(intersections),
-        'intersections': intersections,
-        'details': {
-            'comprimento_km': round(length_km, 3),
-            'faixas': street_data['lanes'],
-            'velocidade_media': street_data['average_speed'],
-            'tipo_via': street_data.get('real_street_data', {}).get('highway_type', 'estimado')
-        }
-    })
 
 @app.route('/api/intersection-traffic-lights', methods=['GET', 'POST', 'DELETE'])
 def handle_intersection_traffic_lights():
@@ -434,9 +170,7 @@ def handle_intersection_traffic_lights():
         conn.close()
         
         # Atualizar no gerenciador
-        advanced_simulator.traffic_light_manager.add_traffic_light_to_intersection(
-            intersection_id, street_id, cycle_time, green_time
-        )
+        traffic_light_manager.add_traffic_light(intersection_id, street_id, green_time, cycle_time)
         
         return jsonify({
             'success': True,
@@ -463,9 +197,7 @@ def handle_intersection_traffic_lights():
         conn.close()
         
         # Remover do gerenciador
-        advanced_simulator.traffic_light_manager.remove_traffic_light_from_intersection(
-            intersection_id, street_id
-        )
+        traffic_light_manager.remove_traffic_light(intersection_id, street_id)
         
         return jsonify({'success': True, 'message': 'Semáforo removido da intersecção'})
     
@@ -501,15 +233,8 @@ def handle_intersection_traffic_lights():
             'green_time': tl[4]
         } for tl in traffic_lights])
 
-@app.route('/api/intersection-analysis', methods=['POST'])
-def analyze_intersection():
-    data = request.json
-    intersection_id = data.get('intersection_id')
-    
-    if not intersection_id:
-        return jsonify({'error': 'intersection_id é obrigatório'}), 400
-    
-    # Buscar dados das ruas
+@app.route('/api/intersections')
+def get_intersections():
     conn = sqlite3.connect('traffic.db')
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM streets')
@@ -523,32 +248,190 @@ def analyze_intersection():
             'name': s[1],
             'coordinates': json.loads(s[2]),
             'length_km': s[3],
+            'lanes': s[4]
+        })
+    
+    intersections = map_manager.find_intersections(streets)
+    return jsonify(intersections)
+
+@app.route('/api/simulate-flow', methods=['POST'])
+def simulate_traffic_flow():
+    """Nova rota para simulação de fluxo"""
+    data = request.json
+    
+    conn = sqlite3.connect('traffic.db')
+    cursor = conn.cursor()
+    
+    # Buscar ruas
+    cursor.execute('SELECT * FROM streets')
+    streets_data = cursor.fetchall()
+    
+    # Buscar semáforos
+    cursor.execute('SELECT * FROM intersection_traffic_lights')
+    traffic_lights_data = cursor.fetchall()
+    conn.close()
+    
+    # Preparar dados
+    streets = []
+    for s in streets_data:
+        streets.append({
+            'id': s[0],
+            'name': s[1],
+            'coordinates': json.loads(s[2]),
+            'length_km': s[3],
             'lanes': s[4],
             'vehicles_per_hour': s[5],
             'average_speed': s[6]
         })
     
-    # Criar objeto intersecção simulado
-    intersection = {
-        'streets': [int(street_id) for street_id in intersection_id.split('_')[1].split('-')],
-        'point': [0, 0]  # Não usado na análise
+    traffic_lights = []
+    for tl in traffic_lights_data:
+        traffic_lights.append({
+            'street_id': tl[2],
+            'intersection_id': tl[1],
+            'green_time': tl[4],
+            'cycle_time': tl[3]
+        })
+    
+    # Encontrar intersecções
+    intersections = map_manager.find_intersections(streets)
+    
+    # Simular cada intersecção
+    results = {
+        'intersections': [],
+        'overall_flow': {
+            'total_cars_passing': 0,
+            'total_waiting_time': 0,
+            'average_wait_per_car': 0
+        }
     }
     
-    # Simular sem semáforos
-    streets_before = streets.copy()
+    total_cars = 0
+    total_wait = 0
     
-    # Simular com semáforos (usando configuração atual)
-    streets_after = streets.copy()
+    for intersection in intersections:
+        intersection_result = traffic_simulator.simulate_intersection_flow(
+            intersection, streets, traffic_lights
+        )
+        results['intersections'].append({
+            'intersection_data': intersection,
+            'flow_results': intersection_result
+        })
+        
+        total_cars += intersection_result['total_cars_passing']
+        total_wait += intersection_result['total_waiting_time']
     
-    analysis = advanced_simulator.evaluate_intersection_improvement(
-        intersection, streets_before, streets_after
+    # Estatísticas gerais
+    if total_cars > 0:
+        results['overall_flow']['total_cars_passing'] = total_cars
+        results['overall_flow']['total_waiting_time'] = total_wait
+        results['overall_flow']['average_wait_per_car'] = total_wait / total_cars
+    
+    return jsonify(results)
+
+@app.route('/api/search-street', methods=['POST'])
+def search_street():
+    data = request.json
+    street_name = data.get('street_name', '')
+    city = data.get('city', 'São Paulo')
+    
+    if not street_name:
+        return jsonify({'error': 'Nome da rua é obrigatório'}), 400
+    
+    results = real_street_importer.geocoder.search_street(street_name, city)
+    
+    return jsonify({
+        'results': results,
+        'count': len(results)
+    })
+
+@app.route('/api/import-street', methods=['POST'])
+def import_street():
+    data = request.json
+    street_name = data.get('street_name', '')
+    city = data.get('city', 'São Paulo')
+    vehicles_per_hour = data.get('vehicles_per_hour', 800)
+    average_speed = data.get('average_speed', 50)
+    lanes = data.get('lanes', 2)
+    
+    if not street_name:
+        return jsonify({'error': 'Nome da rua é obrigatório'}), 400
+    
+    # Importar rua real
+    street_data, message = real_street_importer.import_real_street(
+        street_name, city, vehicles_per_hour, average_speed, lanes
     )
     
-    return jsonify(analysis)
+    if not street_data:
+        return jsonify({'error': message}), 404
+    
+    # Salvar no banco
+    conn = sqlite3.connect('traffic.db')
+    cursor = conn.cursor()
+    
+    length_km = map_manager.calculate_street_length(street_data['coordinates'])
+    
+    cursor.execute('''
+        INSERT INTO streets (name, coordinates, length_km, lanes, vehicles_per_hour, average_speed)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (street_data['name'], json.dumps(street_data['coordinates']), length_km,
+          lanes, vehicles_per_hour, average_speed))
+    
+    conn.commit()
+    street_id = cursor.lastrowid
+    conn.close()
+    
+    # Buscar intersecções com ruas existentes
+    conn = sqlite3.connect('traffic.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM streets WHERE id != ?', (street_id,))
+    existing_streets_data = cursor.fetchall()
+    conn.close()
+    
+    existing_streets = []
+    for s in existing_streets_data:
+        existing_streets.append({
+            'id': s[0],
+            'name': s[1],
+            'coordinates': json.loads(s[2]),
+            'length_km': s[3],
+            'lanes': s[4]
+        })
+    
+    imported_street = {
+        'id': street_id,
+        'name': street_data['name'],
+        'coordinates': street_data['coordinates'],
+        'length_km': length_km,
+        'lanes': lanes
+    }
+    
+    intersections = map_manager.find_intersections(existing_streets + [imported_street])
+    
+    # Filtrar apenas intersecções envolvendo a rua importada
+    street_intersections = []
+    for intersection in intersections:
+        if imported_street['id'] in intersection['streets']:
+            street_intersections.append(intersection)
+    
+    return jsonify({
+        'success': True,
+        'message': message,
+        'street_id': street_id,
+        'street_data': imported_street,
+        'intersections_found': len(street_intersections),
+        'intersections': street_intersections,
+        'details': {
+            'comprimento_km': round(length_km, 3),
+            'faixas': lanes,
+            'velocidade_media': average_speed,
+            'veiculos_hora': vehicles_per_hour
+        }
+    })
 
 if __name__ == '__main__':
     init_db()
     print("✅ Banco de dados inicializado!")
     print("🚀 Servidor rodando em: http://localhost:5000")
-    print("🎯 Simulador de Tráfego com Intersecções - Pronto!")
+    print("🎯 Simulador de Fluxo de Tráfego - Pronto!")
     app.run(debug=True)

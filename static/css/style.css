@@ -67,7 +67,7 @@ header {
     gap: 1.5rem;
 }
 
-.control-panel, .form-section, .real-street-search, .results-section {
+.control-panel, .form-section, .real-street-search, .results-section, .simulation-section {
     background: var(--light-bg);
     padding: 1.25rem;
     border-radius: 10px;
@@ -84,6 +84,10 @@ header {
 
 .results-section {
     border-left-color: var(--danger-color);
+}
+
+.simulation-section {
+    border-left-color: var(--success-color);
 }
 
 h3 {
@@ -623,11 +627,6 @@ h3 {
     font-size: 0.9rem;
 }
 
-.efficiency {
-    color: var(--success-color);
-    font-weight: bold;
-}
-
 .analysis-section {
     margin-top: 2rem;
     padding-top: 1rem;
@@ -898,6 +897,433 @@ h3 {
     }
 }
 
+/* ========== SIDEBAR DE SEMÁFOROS ========== */
+
+.traffic-light-config {
+    background: var(--light-bg);
+    padding: 1.25rem;
+    border-radius: 10px;
+    border-left: 4px solid var(--warning-color);
+}
+
+.traffic-lights-container {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-top: 1rem;
+}
+
+.no-traffic-lights {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--light-text);
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 2px dashed #ddd;
+}
+
+.no-traffic-lights i {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+    color: #bdc3c7;
+}
+
+.no-traffic-lights p {
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.no-traffic-lights small {
+    font-size: 0.8rem;
+}
+
+.traffic-lights-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.traffic-light-item {
+    background: white;
+    border: 2px solid #ecf0f1;
+    border-radius: 8px;
+    padding: 1rem;
+    transition: all 0.3s;
+}
+
+.traffic-light-item:hover {
+    border-color: var(--secondary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.light-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.light-header strong {
+    color: var(--dark-text);
+    font-size: 0.95rem;
+}
+
+.light-details {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.light-config {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.config-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--light-text);
+}
+
+.light-actions {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.btn-danger-small {
+    background: var(--danger-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0.4rem 0.6rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.3s;
+}
+
+.btn-danger-small:hover {
+    background: #c0392b;
+    transform: scale(1.05);
+}
+
+/* ========== SEÇÃO DE SIMULAÇÃO ========== */
+
+.simulation-info {
+    margin-top: 0.5rem;
+    color: var(--light-text);
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+/* ========== SISTEMA DE FLUXO VISUAL ========== */
+
+/* Resumo do Fluxo */
+.flow-summary {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 10px;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.flow-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.flow-stat {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid var(--secondary-color);
+}
+
+.stat-icon {
+    font-size: 2rem;
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.stat-label {
+    font-size: 0.9rem;
+    color: var(--light-text);
+}
+
+/* Intersecções - Fluxo */
+.intersection-flows {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.intersection-flow {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-left: 6px solid;
+}
+
+.intersection-flow.flow-fluent {
+    border-left-color: #27ae60;
+    background: linear-gradient(135deg, #f8fff9, #ffffff);
+}
+
+.intersection-flow.flow-moderate {
+    border-left-color: #f39c12;
+    background: linear-gradient(135deg, #fff9e6, #ffffff);
+}
+
+.intersection-flow.flow-congested {
+    border-left-color: #e67e22;
+    background: linear-gradient(135deg, #fff5e6, #ffffff);
+}
+
+.intersection-flow.flow-stopped {
+    border-left-color: #e74c3c;
+    background: linear-gradient(135deg, #fff5f5, #ffffff);
+}
+
+.flow-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #ecf0f1;
+}
+
+.traffic-condition {
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: bold;
+    font-size: 0.9rem;
+}
+
+.traffic-condition.flow-fluent { background: #27ae60; color: white; }
+.traffic-condition.flow-moderate { background: #f39c12; color: white; }
+.traffic-condition.flow-congested { background: #e67e22; color: white; }
+.traffic-condition.flow-stopped { background: #e74c3c; color: white; }
+
+.flow-visual {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.cars-flowing, .waiting-time {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.flow-icon, .time-icon {
+    font-size: 2rem;
+}
+
+.flow-info strong, .time-info strong {
+    display: block;
+    font-size: 1.2rem;
+    color: var(--primary-color);
+}
+
+.flow-info span, .time-info span {
+    font-size: 0.9rem;
+    color: var(--light-text);
+}
+
+/* Detalhes por Rua */
+.street-breakdown {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+}
+
+.street-flow-detail {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+    background: white;
+    border-radius: 6px;
+    border-left: 4px solid var(--secondary-color);
+}
+
+.street-name {
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.street-stats {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.street-stats .cars {
+    color: var(--success-color);
+    font-weight: 600;
+}
+
+.street-stats .wait-time {
+    color: var(--warning-color);
+    font-weight: 600;
+}
+
+.flow-status {
+    padding: 0.25rem 0.75rem;
+    border-radius: 15px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.flow-status.controlado { background: #3498db; color: white; }
+.flow-status.livre { background: #27ae60; color: white; }
+
+/* Análise de Intersecção */
+.intersection-analysis {
+    text-align: center;
+}
+
+.analysis-overview {
+    padding: 1.5rem;
+    border-radius: 10px;
+    margin: 1.5rem 0;
+}
+
+.analysis-overview.flow-fluent { background: linear-gradient(135deg, #27ae60, #2ecc71); color: white; }
+.analysis-overview.flow-moderate { background: linear-gradient(135deg, #f39c12, #f1c40f); color: white; }
+.analysis-overview.flow-congested { background: linear-gradient(135deg, #e67e22, #e74c3c); color: white; }
+.analysis-overview.flow-stopped { background: linear-gradient(135deg, #c0392b, #e74c3c); color: white; }
+
+.overview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.key-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+}
+
+.metric-card {
+    background: rgba(255,255,255,0.2);
+    padding: 1rem;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.metric-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.metric-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin-bottom: 0.25rem;
+}
+
+.metric-label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+/* Análise por Rua */
+.street-analysis {
+    margin: 1.5rem 0;
+}
+
+.street-analysis-item {
+    background: white;
+    padding: 1rem;
+    margin: 0.75rem 0;
+    border-radius: 8px;
+    border-left: 4px solid var(--secondary-color);
+    text-align: left;
+}
+
+.street-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.light-badge {
+    background: var(--warning-color);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 15px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.no-light-badge {
+    background: #95a5a6;
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 15px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.street-metrics {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.street-metrics .metric {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.status-controlado { color: #3498db; font-weight: 600; }
+.status-livre { color: #27ae60; font-weight: 600; }
+
+.wait-range {
+    color: var(--light-text);
+    font-size: 0.8rem;
+}
+
+.analysis-insights {
+    background: #e8f4fd;
+    padding: 1rem;
+    border-radius: 8px;
+    border-left: 4px solid var(--secondary-color);
+    text-align: left;
+}
+
+.analysis-insights h5 {
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .main-content {
@@ -952,5 +1378,54 @@ h3 {
     
     .result-grid {
         grid-template-columns: 1fr;
+    }
+    
+    .flow-stats {
+        grid-template-columns: 1fr;
+    }
+    
+    .flow-visual {
+        grid-template-columns: 1fr;
+    }
+    
+    .street-flow-detail {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .street-stats {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .key-metrics {
+        grid-template-columns: 1fr;
+    }
+    
+    .overview-header {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+    }
+    
+    .street-metrics {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .light-details {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+    
+    .light-actions {
+        align-self: flex-end;
+    }
+    
+    .traffic-light-item {
+        padding: 0.75rem;
     }
 }
